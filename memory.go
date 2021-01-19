@@ -5,29 +5,29 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/micro/go-micro/v3/debug/trace"
-	"github.com/micro/go-micro/v3/util/ring"
+	"github.com/unistack-org/micro/v3/tracer"
+	"github.com/unistack-org/micro/v3/util/ring"
 )
 
 type Tracer struct {
-	opts trace.Options
+	opts tracer.Options
 
 	// ring buffer of traces
 	buffer *ring.Buffer
 }
 
-func (t *Tracer) Read(opts ...trace.ReadOption) ([]*trace.Span, error) {
-	var options trace.ReadOptions
+func (t *Tracer) Read(opts ...tracer.ReadOption) ([]*tracer.Span, error) {
+	var options tracer.ReadOptions
 	for _, o := range opts {
 		o(&options)
 	}
 
 	sp := t.buffer.Get(t.buffer.Size())
 
-	spans := make([]*trace.Span, 0, len(sp))
+	spans := make([]*tracer.Span, 0, len(sp))
 
 	for _, span := range sp {
-		val := span.Value.(*trace.Span)
+		val := span.Value.(*tracer.Span)
 		// skip if trace id is specified and doesn't match
 		if len(options.Trace) > 0 && val.Trace != options.Trace {
 			continue
@@ -38,8 +38,8 @@ func (t *Tracer) Read(opts ...trace.ReadOption) ([]*trace.Span, error) {
 	return spans, nil
 }
 
-func (t *Tracer) Start(ctx context.Context, name string) (context.Context, *trace.Span) {
-	span := &trace.Span{
+func (t *Tracer) Start(ctx context.Context, name string) (context.Context, *tracer.Span) {
+	span := &tracer.Span{
 		Name:     name,
 		Trace:    uuid.New().String(),
 		Id:       uuid.New().String(),
@@ -49,13 +49,13 @@ func (t *Tracer) Start(ctx context.Context, name string) (context.Context, *trac
 
 	// return span if no context
 	if ctx == nil {
-		return trace.ToContext(context.Background(), span.Trace, span.Id), span
+		return tracer.NewContext(context.Background(), span.Trace, span.Id), span
 	}
-	traceID, parentSpanID, ok := trace.FromContext(ctx)
+	traceID, parentSpanID, ok := tracer.FromContext(ctx)
 	// If the trace can not be found in the header,
 	// that means this is where the trace is created.
 	if !ok {
-		return trace.ToContext(ctx, span.Trace, span.Id), span
+		return tracer.NewContext(ctx, span.Trace, span.Id), span
 	}
 
 	// set trace id
@@ -64,10 +64,10 @@ func (t *Tracer) Start(ctx context.Context, name string) (context.Context, *trac
 	span.Parent = parentSpanID
 
 	// return the span
-	return trace.ToContext(ctx, span.Trace, span.Id), span
+	return tracer.NewContext(ctx, span.Trace, span.Id), span
 }
 
-func (t *Tracer) Finish(s *trace.Span) error {
+func (t *Tracer) Finish(s *tracer.Span) error {
 	// set finished time
 	s.Duration = time.Since(s.Started)
 	// save the span
@@ -76,14 +76,9 @@ func (t *Tracer) Finish(s *trace.Span) error {
 	return nil
 }
 
-func NewTracer(opts ...trace.Option) trace.Tracer {
-	var options trace.Options
-	for _, o := range opts {
-		o(&options)
-	}
-
+func NewTracer(opts ...tracer.Option) tracer.Tracer {
 	return &Tracer{
-		opts: options,
+		opts: tracer.NewOptions(opts...),
 		// the last 256 requests
 		buffer: ring.New(256),
 	}
